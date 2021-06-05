@@ -10,7 +10,6 @@
 #include <iostream>
 #include <atomic>
 #include <algorithm>
-#include <queue>
 using namespace std;
 
 // ------------------------------------------------------ declarations ---------------------------------------------
@@ -18,16 +17,17 @@ using namespace std;
 #define THREAD_CREATE_ERROR "system couldn't create thread: "
 #define FAIL 1
 #define SUCCESS 0
-
-
+#define INTER_BACK job->contexts[i].my_intermediary->back()
+#define INTER_EMPTY job->contexts[i].my_intermediary->empty()
+#define THREAD0_INTER_BACK job->contexts[0].my_intermediary->back().first
 
 struct Context{
     // todo: hold job?
     const InputVec *inputVec;
     OutputVec *outputVec;
+    IntermediateVec* my_intermediary;
+    vector<IntermediateVec*>* intermediary_elements;
     JobState* job_state;
-    IntermediateVec* intermediary_elements;
-    OutputVec* output_elements;
     atomic<int>* map_counter;
     atomic<int>* intermediary_counter;
     atomic<int>* out_counter;
@@ -61,7 +61,8 @@ void emit2 (K2* key, V2* value, void* context){
     if (tc == nullptr){
         return; // todo: what to do?
     }
-    tc->intermediary_elements->push_back({key, value});
+    tc->my_intermediary->push_back({key, value});
+
     (*(tc->intermediary_counter))++;
 }
 
@@ -70,7 +71,7 @@ void emit3 (K3* key, V3* value, void* context){
     if (tc == nullptr){
         return; // todo: what to do?
     }
-    tc->output_elements->push_back({key, value});
+    tc->outputVec->push_back({key, value});
     (*(tc->intermediary_counter))++;
 }
 
@@ -82,7 +83,6 @@ JobHandle startMapReduceJob(const MapReduceClient& client,
     if (&inputVec == nullptr){
         return SUCCESS; // todo: or FAIL?
     }
-
 
     // create pointers:
     const InputVec* new_inputVec = &inputVec;
@@ -101,16 +101,16 @@ JobHandle startMapReduceJob(const MapReduceClient& client,
     //thread 0
     int err = pthread_create(&new_job->threads[0], NULL, &main_thread_entry, NULL);
     handle_error(err, THREAD_CREATE_ERROR);
-    new_job->contexts[0].intermediary_elements =  new IntermediateVec;
-    new_job->contexts[0].output_elements = new OutputVec;
+    new_job->contexts[0].intermediary_elements = new vector<IntermediateVec*>();
+    new_job->contexts[0].outputVec = new OutputVec;
 
     // rest of threads
     for (int i = 1; i < multiThreadLevel; ++i) {
         int err = pthread_create(&new_job->threads[i], NULL, &basic_thread_entry, NULL);
         handle_error(err, THREAD_CREATE_ERROR);
         new_job->contexts[i].job_state = new_job->state;
-        new_job->contexts[i].intermediary_elements =  new IntermediateVec;
-        new_job->contexts[i].output_elements = new OutputVec;
+        new_job->contexts[i].my_intermediary =  new IntermediateVec;
+        new_job->contexts[i].outputVec = new OutputVec;
         new_job->contexts[i].map_counter = map_counter;
         new_job->contexts[i].intermediary_counter = inter_counter;
         new_job->contexts[i].out_counter = out_counter;
@@ -178,6 +178,7 @@ void* f(void *){
 
 void map(Context* tc){
     printf("1\n");
+    tc->intermediary_elements->push_back(tc->my_intermediary);
     auto iter = tc->inputVec->begin();
     int i=0;
     while (*iter != *tc->inputVec->end()){
@@ -200,27 +201,38 @@ void sort_(Context* tc){
 
 void shuffle(Job* job, Context thread0) {
     printf("3\n");
-    queue<IntermediateVec> queue;
+    vector<IntermediateVec*>* queue;
     int count = job->contexts[0].intermediary_elements->size();
-    K1 key = job->contexts[0].intermediary_elements->pop_back();
+    K2* key = THREAD0_INTER_BACK;
+    queue->push_back(new IntermediateVec());
     while (count > 0){
         for (int i = 0; i < job->multiThreadLevel; ++i) {
-            if (!job->contexts[i].intermediary_elements->empty()){
-
+            while(!INTER_EMPTY && *key < *(INTER_BACK.first) && *(INTER_BACK.first) < *key) {
+                queue->back()->push_back(INTER_BACK);
                 count--;
             }
         }
-
+        key = THREAD0_INTER_BACK;
+        queue->push_back(new IntermediateVec());
     }
-
+    job->contexts[0].intermediary_elements = queue;
     return;
 }
 
 void reduce(Context* tc){
     printf("5\n");
-    auto iter = tc->inputVec->begin();
+    printf("1\n");
+    auto iter = tc->intermediary_elements->begin();
     int i=0;
-    tc->client->reduce( tc->intermediary_elements, tc);
+    while (*iter != *tc->intermediary_elements->end()){
+        if (i == *tc->map_counter){
+            tc->client->reduce(*iter, tc);
+            (*(tc->map_counter))++;
+            iter++;
+        }
+        i++;
+        iter++;
+    }
     return;
 }
 
