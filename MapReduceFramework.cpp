@@ -5,31 +5,36 @@
 #include "MapReduceFramework.h"
 #include <pthread.h>
 #include <vector>
-use namespace std
+#include <string>
+#include <iostream>
+using namespace std;
 
 // ------------------------------------------------------ declarations ---------------------------------------------
 #define SYSTEM_ERROR "system error: "
-
-typedef struct{
+#define THREAD_CREATE_ERROR "system couldn't create thread: "
+#define FAIL 1
+#define SUCCESS 0
+struct Context{
     const InputVec *inputVec;
     OutputVec *outputVec;
     std::vector<IntermediateVec> *intermediary_elements;
     std::vector<IntermediateVec> *output_elements;
-}Context;
+};
 
 typedef struct{
     JobState state;
-    pthread_t* threads = null;
-    Context* contexts = null;
+    pthread_t* threads = NULL;
+    Context* contexts = NULL;
 }Job;
 
-void system_error(string message);
+void handle_error(int code, string message);
+void map();
 void sort();
 void reduce();
 void shuffle();
 void wait_for_shuffle();
-void basic_thread_entry();
-void main_thread_entry();
+void basic_thread_entry(void *);
+void main_thread_entry(void *);
 
 // ------------------------------------------------------ API ---------------------------------------------
 
@@ -40,21 +45,25 @@ void emit3 (K3* key, V3* value, void* context){
     return;
 }
 
+
+
 JobHandle startMapReduceJob(const MapReduceClient& client,
                             const InputVec& inputVec, OutputVec& outputVec,
                             int multiThreadLevel){
     Job new_job;
-    new_job.threads = new thread[multiThreadLevel];
+    new_job.threads = new pthread_t[multiThreadLevel];
     new_job.contexts = new Context[multiThreadLevel];
     for (int i = 0; i < multiThreadLevel; ++i) {
-        new_job.threads[i] = pthread_create();
-        new_job.contexts[i] = {inputVec, outputVec, new IntermediateVec, new OutputVec};
+        int err = pthread_create(new_job.threads[i], NULL, basic_thread_entry, NULL);
+        handle_error(err, THREAD_CREATE_ERROR);
+        new_job.contexts[i].inputVec = inputVec;
+        , outputVec, new IntermediateVec, new OutputVec};
     }
-    return nullptr;
+    return &new_job;
 }
 
 void waitForJob(JobHandle job){
-    return nullptr;
+    return;
 }
 
 void getJobState(JobHandle job, JobState* state){
@@ -63,25 +72,28 @@ void getJobState(JobHandle job, JobState* state){
 }
 
 void closeJobHandle(JobHandle job){
-    return nullptr;
+    return;
 }
 
 
 // ------------------------------------------------------ Auxiliary ---------------------------------------------
 
 
-void system_error(string message){
-    cout << SYSTEM_ERROR << message << "\n";
+bool handle_error(int code, string message){
+    if (code){
+        cout << SYSTEM_ERROR << message << "\n";
+        exit(FAIL);
+    }
 }
 
-void basic_thread_entry(){
+void basic_thread_entry(void *){
     map();
     sort();
     wait_for_shuffle();
     reduce();
 }
 
-void main_thread_entry(){
+void main_thread_entry(void *){
     map();
     sort();
     shuffle();
