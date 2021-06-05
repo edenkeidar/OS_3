@@ -9,6 +9,8 @@
 #include <string>
 #include <iostream>
 #include <atomic>
+#include <algorithm>
+#include <queue>
 using namespace std;
 
 // ------------------------------------------------------ declarations ---------------------------------------------
@@ -17,6 +19,8 @@ using namespace std;
 #define FAIL 1
 #define SUCCESS 0
 
+
+
 struct Context{
     // todo: hold job?
     const InputVec *inputVec;
@@ -24,14 +28,17 @@ struct Context{
     JobState* job_state;
     IntermediateVec* intermediary_elements;
     OutputVec* output_elements;
-    atomic<int>* atomic_counter;
+    atomic<int>* map_counter;
+    atomic<int>* intermediary_counter;
+    atomic<int>* out_counter;
+    const MapReduceClient* client;
 };
 
 typedef struct{
-    MapReduceClient* client;
     JobState* state;
     pthread_t* threads = NULL;
     Context* contexts = NULL;
+    int multiThreadLevel;
 }Job;
 
 //Job new_job(InputVec *inputVec, OutputVec *outputVec, pthread_t* threads, Context* contexts, int size){
@@ -39,21 +46,32 @@ typedef struct{
 //}
 
 void handle_error(int code, string message);
-void * map(void * args);
-void sort();
-void reduce();
-void shuffle();
-void wait_for_shuffle();
+void map(Context* tc);
+void sort_(Context* tc);
+void reduce(Context* tc);
+void shuffle(Context* tc);
+void wait_for_shuffle(Context* tc);
 void* basic_thread_entry(void *);
 void* main_thread_entry(void *);
 void* f(void *);
 // ------------------------------------------------------ API ---------------------------------------------
 
 void emit2 (K2* key, V2* value, void* context){
-    return;
+    Context* tc = (Context*) context;
+    if (tc == nullptr){
+        return; // todo: what to do?
+    }
+    tc->intermediary_elements->push_back({key, value});
+    (*(tc->intermediary_counter))++;
 }
+
 void emit3 (K3* key, V3* value, void* context){
-    return;
+    Context* tc = (Context*) context;
+    if (tc == nullptr){
+        return; // todo: what to do?
+    }
+    tc->output_elements->push_back({key, value});
+    (*(tc->intermediary_counter))++;
 }
 
 JobHandle startMapReduceJob(const MapReduceClient& client,
@@ -69,13 +87,16 @@ JobHandle startMapReduceJob(const MapReduceClient& client,
     // create pointers:
     const InputVec* new_inputVec = &inputVec;
     OutputVec * new_outVec = &outputVec;
-    atomic<int>* atomic_counter(0);
+    atomic<int>* map_counter(0);
+    atomic<int>* inter_counter(0);
+    atomic<int>* out_counter(0);
 
     // create job
     Job* new_job;
     new_job->state->stage = UNDEFINED_STAGE;
     new_job->threads = new pthread_t[multiThreadLevel];
     new_job->contexts = new Context[multiThreadLevel];
+    new_job->multiThreadLevel = multiThreadLevel;
 
     //thread 0
     int err = pthread_create(&new_job->threads[0], NULL, &main_thread_entry, NULL);
@@ -90,9 +111,12 @@ JobHandle startMapReduceJob(const MapReduceClient& client,
         new_job->contexts[i].job_state = new_job->state;
         new_job->contexts[i].intermediary_elements =  new IntermediateVec;
         new_job->contexts[i].output_elements = new OutputVec;
-        new_job->contexts[i].atomic_counter = atomic_counter;
+        new_job->contexts[i].map_counter = map_counter;
+        new_job->contexts[i].intermediary_counter = inter_counter;
+        new_job->contexts[i].out_counter = out_counter;
         new_job->contexts[i].inputVec = new_inputVec;
         new_job->contexts[i].outputVec = new_outVec;
+        new_job->contexts[i].client = &client;
     }
     return new_job;
 }
@@ -121,20 +145,28 @@ void handle_error(int code, string message){
     }
 }
 
-void* basic_thread_entry(void *){
-    map(nullptr);
-    sort();
-    wait_for_shuffle();
-    reduce();
+void* basic_thread_entry(void * arg){
+    Context* tc = (Context*) arg;
+    if (tc == nullptr){
+        return nullptr; // todo: what to do?
+    }
+    map(tc);
+    sort_(tc);
+    wait_for_shuffle(tc);
+    reduce(tc);
     return nullptr;
 }
 
 
-void* main_thread_entry(void *){
-    map(nullptr);
-    sort();
-    shuffle();
-    reduce();
+void* main_thread_entry(void * arg){
+    Context* tc = (Context*) arg;
+    if (tc == nullptr){
+        return nullptr; // todo: what to do?
+    }
+    map(tc);
+    sort_(tc);
+    shuffle(tc);
+    reduce(tc);
     return nullptr;
 }
 
@@ -144,35 +176,55 @@ void* f(void *){
     return nullptr;
 }
 
-void* map(void* arg){
-    Context* tc = (Context*) arg;
-    if (tc == nullptr){
-        return 0;
-    }
+void map(Context* tc){
     printf("1\n");
-    for (auto i : *tc->inputVec) {
-        int old_value = (*(tc->atomic_counter))++;
-        (void) old_value;  // ignore not used warning
+    auto iter = tc->inputVec->begin();
+    int i=0;
+    while (*iter != *tc->inputVec->end()){
+        if (i == *tc->map_counter){
+            tc->client->map(iter->first, iter->second, tc);
+            (*(tc->map_counter))++;
+            iter++;
+        }
+        i++;
+        iter++;
     }
-    return 0;
+    return;
 }
 
-void sort(){
+void sort_(Context* tc){
+    sort(tc->intermediary_elements->begin(), tc->intermediary_elements->end());
     printf("2\n");
     return;
 }
 
-void shuffle() {
+void shuffle(Job* job, Context thread0) {
     printf("3\n");
+    queue<IntermediateVec> queue;
+    int count = job->contexts[0].intermediary_elements->size();
+    K1 key = job->contexts[0].intermediary_elements->pop_back();
+    while (count > 0){
+        for (int i = 0; i < job->multiThreadLevel; ++i) {
+            if (!job->contexts[i].intermediary_elements->empty()){
+
+                count--;
+            }
+        }
+
+    }
+
     return;
 }
 
-void reduce(){
+void reduce(Context* tc){
     printf("5\n");
+    auto iter = tc->inputVec->begin();
+    int i=0;
+    tc->client->reduce( tc->intermediary_elements, tc);
     return;
 }
 
-void wait_for_shuffle(){
+void wait_for_shuffle(Context* tc){
     printf("4\n");
     return;
 }
