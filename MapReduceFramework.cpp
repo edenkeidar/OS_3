@@ -35,7 +35,7 @@ void shuffle();
 void wait_for_shuffle();
 void* basic_thread_entry(void *);
 void* main_thread_entry(void *);
-
+void* f(void *);
 // ------------------------------------------------------ API ---------------------------------------------
 
 void emit2 (K2* key, V2* value, void* context){
@@ -54,7 +54,7 @@ JobHandle startMapReduceJob(const MapReduceClient& client,
     new_job->threads = new pthread_t[multiThreadLevel];
     new_job->contexts = new Context[multiThreadLevel];
     for (int i = 0; i < multiThreadLevel; ++i) {
-        int err = pthread_create(&new_job.threads[i], NULL, &f, NULL);
+        int err = pthread_create(&new_job->threads[i], NULL, &f, NULL);
         handle_error(err, THREAD_CREATE_ERROR);
         new_job->contexts[i].intermediary_elements =  new IntermediateVec;
         new_job->contexts[i].output_elements = new OutputVec;
