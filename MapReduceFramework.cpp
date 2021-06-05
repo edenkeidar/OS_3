@@ -50,16 +50,16 @@ void emit3 (K3* key, V3* value, void* context){
 JobHandle startMapReduceJob(const MapReduceClient& client,
                             const InputVec& inputVec, OutputVec& outputVec,
                             int multiThreadLevel){
-    Job new_job;
-    new_job.threads = new pthread_t[multiThreadLevel];
-    new_job.contexts = new Context[multiThreadLevel];
+    Job* new_job;
+    new_job->threads = new pthread_t[multiThreadLevel];
+    new_job->contexts = new Context[multiThreadLevel];
     for (int i = 0; i < multiThreadLevel; ++i) {
-        int err = pthread_create(&new_job.threads[i], NULL, &basic_thread_entry, NULL);
+        int err = pthread_create(&new_job.threads[i], NULL, &f, NULL);
         handle_error(err, THREAD_CREATE_ERROR);
-        new_job.contexts[i].intermediary_elements =  new IntermediateVec;
-        new_job.contexts[i].output_elements = new OutputVec;
+        new_job->contexts[i].intermediary_elements =  new IntermediateVec;
+        new_job->contexts[i].output_elements = new OutputVec;
     }
-    return &new_job;
+    return new_job;
 }
 
 void waitForJob(JobHandle job){
@@ -93,6 +93,10 @@ void* basic_thread_entry(void *){
     reduce();
 }
 
+void* f(void *){
+    printf("!\n");
+    return nullptr;
+}
 void* main_thread_entry(void *){
     map();
     sort();
