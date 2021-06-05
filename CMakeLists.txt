@@ -1,6 +1,6 @@
-cmake_minimum_required(VERSION 3.17)
+cmake_minimum_required(VERSION 3.15)
 project(untitled)
 
 set(CMAKE_CXX_STANDARD 11)
 
-add_executable(OS_3 Atomic/atomicdemo_multivar.cpp MapReduceFramework.h MapReduceFramework.cpp)
+add_executable(OS_3 MapReduceClient.h MapReduceFramework.h MapReduceFramework.cpp OutClient.cpp)
