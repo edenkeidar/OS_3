@@ -15,13 +15,13 @@ using namespace std;
 #define FAIL 1
 #define SUCCESS 0
 struct Context{
-    const InputVec *inputVec;
-    OutputVec *outputVec;
-    std::vector<IntermediateVec> *intermediary_elements;
-    std::vector<IntermediateVec> *output_elements;
+    IntermediateVec* intermediary_elements;
+    OutputVec* output_elements;
 };
 
 typedef struct{
+    const InputVec *inputVec;
+    OutputVec *outputVec;
     JobState state;
     pthread_t* threads = NULL;
     Context* contexts = NULL;
@@ -33,8 +33,8 @@ void sort();
 void reduce();
 void shuffle();
 void wait_for_shuffle();
-void basic_thread_entry(void *);
-void main_thread_entry(void *);
+void* basic_thread_entry(void *);
+void* main_thread_entry(void *);
 
 // ------------------------------------------------------ API ---------------------------------------------
 
@@ -54,10 +54,10 @@ JobHandle startMapReduceJob(const MapReduceClient& client,
     new_job.threads = new pthread_t[multiThreadLevel];
     new_job.contexts = new Context[multiThreadLevel];
     for (int i = 0; i < multiThreadLevel; ++i) {
-        int err = pthread_create(new_job.threads[i], NULL, basic_thread_entry, NULL);
+        int err = pthread_create(&new_job.threads[i], NULL, &basic_thread_entry, NULL);
         handle_error(err, THREAD_CREATE_ERROR);
-        new_job.contexts[i].inputVec = inputVec;
-        , outputVec, new IntermediateVec, new OutputVec};
+        new_job.contexts[i].intermediary_elements =  new IntermediateVec;
+        new_job.contexts[i].output_elements = new OutputVec;
     }
     return &new_job;
 }
@@ -79,21 +79,21 @@ void closeJobHandle(JobHandle job){
 // ------------------------------------------------------ Auxiliary ---------------------------------------------
 
 
-bool handle_error(int code, string message){
+void handle_error(int code, string message){
     if (code){
         cout << SYSTEM_ERROR << message << "\n";
         exit(FAIL);
     }
 }
 
-void basic_thread_entry(void *){
+void* basic_thread_entry(void *){
     map();
     sort();
     wait_for_shuffle();
     reduce();
 }
 
-void main_thread_entry(void *){
+void* main_thread_entry(void *){
     map();
     sort();
     shuffle();
