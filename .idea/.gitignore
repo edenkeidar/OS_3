@@ -6,3 +6,7 @@
 /dataSources.local.xml
 # Editor-based HTTP Client requests
 /httpRequests/
+OS_3.iml
+modules.xml
+vcs.xml
+CMakeLists.txt
